@@ -22,7 +22,7 @@ source activate stereo-seq
 pip install -r requirements.txt
 ```
 
-5. Allow your code to be able to see 'stereo-seq'
+5. Allow your code to be able to see the 'stereo_seq' package installed by setup.py
 ```
 cd <path_to_this directory>
 $ pip install -e .
