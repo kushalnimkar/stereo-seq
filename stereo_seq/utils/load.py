@@ -60,3 +60,18 @@ def custom_load(data_folder):
     adata.var.index= adata_features[1].tolist()
     adata.var.index.name='gene_name'
     return adata
+
+def load_XieSC(f=os.path.join("../","data","atlas","Xie_SC.h5ad")):
+    adata_ref = sc.read_h5ad(f)
+    #Add class level to Xie dataset
+    class_mapping = {}
+    for key in adata_ref.obs['celltype'].unique():
+        if 'Ex-' in key:
+            class_mapping[key] = 'Excitatory'
+        elif 'In-' in key:
+            class_mapping[key] = 'Inhibitory'
+        else:
+            class_mapping[key] = 'Non-neuronal'
+
+    adata_ref.obs['class'] = adata_ref.obs['celltype'].map(class_mapping)
+    return adata_ref

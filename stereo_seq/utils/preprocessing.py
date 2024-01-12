@@ -1,11 +1,11 @@
 import scanpy as sc
 import matplotlib.pyplot as plt
-import re
 import numpy as np
+import pandas as pd
 
 
 import os
-
+import re
 
 
 def pipeline(adata,batch=True,mit_cutoff=0.25,min_genes=400,max_counts=40000,output_f="",figure_dir=""):
@@ -45,13 +45,21 @@ def cluster_and_umap(adata,use_rep, cluster=True,umap=True):
         sc.tl.umap(adata)
     return adata
 
-def preprocess(adata,min_genes=400,batch=False,mit_cutoff=0.25,max_counts=40000):
+def preprocess(adata,min_genes=400,batch=False,mit_cutoff=0.25,fixed_genes=None,max_counts=40000):
+    adata=adata.copy()
     sc.pp.filter_cells(adata,min_genes=min_genes)
     sc.pp.filter_cells(adata,max_counts=max_counts)
-    adata = adata[adata.obs['pct_mito'] < mit_cutoff]
-    print(adata)
+
+    if 'pct_mito' in adata.obs.columns:
+        adata = adata[adata.obs['pct_mito'] < mit_cutoff]
+    else:
+        print("Note: Not filtering for cells with too many mitochondrial genes")
+
     adata.raw = adata.copy()
-    sc.pp.highly_variable_genes(adata,flavor='seurat_v3',n_top_genes=3000, subset=True)
+    if fixed_genes is not None:
+        adata._inplace_subset_var(fixed_genes)
+    else:
+        sc.pp.highly_variable_genes(adata,flavor='seurat_v3',n_top_genes=3000, subset=False)
     sc.pp.normalize_total(adata, inplace=True)
     sc.pp.log1p(adata, copy=False)
     adata.layers['log1p'] = adata.X.copy()
@@ -83,23 +91,47 @@ def make_QC_plots(adata,figure_dir,pre):
         plt.savefig(os.path.join(figure_dir,f"{pre}_pct_mito.png"),dpi=200,bbox_inches='tight')
         plt.show()
 
-def OLD_make_plots(adata,figure_dir):
-    plt.scatter(adata.obs['n_genes'],adata.obs['pct_mito'],s=0.1)
-    plt.xlabel("Number of genes with non-zero expression",fontsize=14)
-    plt.ylabel("Fraction of total mRNA that is mitochondrial gene",fontsize=14)
-    plt.show()
-    plt.hist(adata.obs['pct_mito'],cumulative=True,density=True,bins=1000)
-    plt.xlabel("pct_mitochondrial")
-    plt.ylabel("Fraction of all cells")
-    plt.title("Cumulative Distribution Function")
-    plt.show()
 
-    plt.hist(adata.obs['n_genes'],cumulative=True,density=True,bins=1000)
-    plt.xlabel('n_genes')
-    plt.ylabel("Fraction of all cells")
-    plt.title("Cumulative Distribution Function")
-    plt.show()
+def split_adata(adata,groups,output_dir,other_group='Non-neuronal',cluster_col='leiden',class_col='class',output_pre='NR_'):
+    df_l = []
+    g_lst=[]
+    for group in groups:
+        g_lst.append(group)
+        info = groups[group]
+        assert len(info['marker_genes'])== len(info['z-scores'])
+        cutoffs = np.array(adata[:,info['marker_genes']].X)> np.array(info['z-scores'])
 
+        adata.obs[group]=np.any(cutoffs,axis=1)
+        agg = adata.obs.groupby(cluster_col)[group].mean().reset_index(name=group)
+        agg.set_index(cluster_col,inplace=True)
+        plt.hist(agg[group])
+        plt.ylabel('Number of clusters')
+        plt.xlabel('Prop of cells above cutoff zscore for at least 1 {} marker gene'.format(group))
+        plt.show()
+
+        potential_clusters = agg[agg[group] >info['pct_in']].index.values
+        adata.obs[group] = pd.Categorical(adata.obs[cluster_col].isin(potential_clusters))
+
+        sc.pl.umap(adata,color=[cluster_col]+info['marker_genes'] + [group],vmin=0,vmax=2)
+
+
+
+        df_l.append(agg)
+    
+    bool_t_ident = adata.obs[g_lst].values
+    assert not np.any(np.sum(bool_t_ident,axis=1) >= 2),"One cluster is assigned to two classes"
+    
+    idx_identities = ( np.sum(bool_t_ident,axis=1) !=0 ) * (bool_t_ident.argmax(axis=1)+1) #makes 0 the none type, 1 excitatory, 2 inhibitory...
+    mapping = dict( zip(range(len(g_lst)+1), [other_group] + g_lst ) )
+    adata.obs[class_col] = pd.Categorical( pd.Series(idx_identities,index=adata.obs.index).apply(lambda x: mapping[x]) )
+
+    for cat in adata.obs[class_col].cat.categories:
+        adata_c = adata[adata.obs[class_col]==cat].copy()
+        output_f = os.path.join(output_dir,"{}{}.h5ad".format(output_pre,cat))
+        adata_c.X = adata_c.raw.X
+        adata_c.write_h5ad(output_f)
+    
+    return pd.concat(df_l,axis=1) 
     
 
     
