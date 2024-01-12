@@ -1,0 +1,20 @@
+Note that when you pull from this directory, the datafiles are not present (you will have to add them from the dropbox yourself)
+The following folder structure exists (see notebook for how to set it up)
+
+data/
+
+    NR/
+        AM3N207/ #This is the raw scRNA-seq dataset corresponding to the dropbox drive that you must put in
+            ...
+    DR/
+        ...
+
+    atlas/ #You must put this in yourself
+        Xie_SC.h5ad #Contains data from Xie et al. 2021 Superior Colliculus scRNA-seq (with author providing us their cluster labels)
+
+    aggregated/ # Stores intermediate data processing; Can be empty to start (notebook commands will fill it)
+        NR.h5ad
+        NR_filt.h5ad
+        NR_Inhibitory.h5ad...
+    
+
