@@ -14,6 +14,7 @@ exceptiongroup==1.2.0
 executing==2.0.1
 fonttools==4.47.0
 h5py==3.10.0
+harmonypy==0.0.9
 idna==3.6
 igraph==0.10.8
 importlib-metadata==7.0.1
@@ -72,7 +73,7 @@ six==1.16.0
 stack-data==0.6.3
 statsmodels==0.14.1
 stdlib-list==0.10.0
--e git+ssh://git@github.com/kushalnimkar/stereo-seq.git@8d5e57ad107f4c238d392cb864ccaaee3aae1d0a#egg=stereo_seq
+-e git+ssh://git@github.com/kushalnimkar/stereo-seq.git@d5d77e70401f536248998b67342b598e5bddb09b#egg=stereo_seq
 texttable==1.7.0
 threadpoolctl==3.2.0
 tornado==6.4

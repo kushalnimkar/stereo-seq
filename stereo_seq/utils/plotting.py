@@ -7,30 +7,6 @@ from sklearn.metrics.cluster import adjusted_rand_score
 from collections import OrderedDict
 
 
-def plot_mapping_new(test_labels, test_predlabels, test_dict, train_dict, xaxislabel, yaxislabel,re_order=None,re_order_cols = None,re_index = None, re_order_rows = None, save_as=None,c='blue'):
-    
-    ARI = adjusted_rand_score(labels_true = test_labels, 
-                              labels_pred = test_predlabels)
-    accuracy = np.sum(test_labels==test_predlabels)/len(test_labels)*100
-    
-           
-    mappingconfmat, mappingxticks, mappingplot = plotConfusionMatrixNew(
-    ytrue = test_labels,
-    ypred = test_predlabels,
-    test_dict=test_dict,
-    train_dict=train_dict,
-    type = 'mapping',
-    save_as = save_as,
-    title = 'ARI = {:.3f}, Accuracy = {:.1f}%'.format(ARI,accuracy),
-    xaxislabel =xaxislabel,
-    yaxislabel = yaxislabel,
-        re_order=re_order,
-    re_order_cols = re_order_cols,
-        re_index = re_index,
-    re_order_rows = re_order_rows,
-    c=c,
-    )
-
 def plotConfusionMatrixNew(
     ytrue,
     ypred,
@@ -74,9 +50,11 @@ def plotConfusionMatrixNew(
         most_likely = np.argmax(confusion_matrix, axis=0)
         row_order = list(dict.fromkeys(most_likely)) # Note: If one type is most likely for multiple rows, this will get rid of the duplicates
         inv_dict = {v:k for k,v in test_dict.items()}
-        unclear_assignment = set(test_dict.values()) - set(most_likely)
+        unclear_assignment = set(test_dict.keys()) - set(most_likely)
         row_order.extend(unclear_assignment)
-        row_order = [inv_dict[i] for i in row_order]
+        print(inv_dict,row_order,unclear_assignment)
+        print(conf_df)
+        #row_order = [inv_dict[i] for i in row_order]
         conf_df = conf_df.reindex(row_order)
     diagcm = conf_df.to_numpy()
 
@@ -101,9 +79,9 @@ def plotConfusionMatrixNew(
 
         
     
+    conf_df.index = conf_df.index.map(test_dict)
 
-
-    xticksactual = list(conf_df.columns)
+    xticksactual = list(conf_df.columns.map(train_dict))
 
     dot_max = np.max(diagcm.flatten())
     dot_min = 0
@@ -209,3 +187,27 @@ def plotConfusionMatrixNew(
         fig.savefig(save_as, bbox_inches = 'tight')
     plt.show()
     return diagcm, xticksactual, axs
+
+def plot_mapping_new(test_labels, test_predlabels, test_dict, train_dict, xaxislabel, yaxislabel,re_order=None,re_order_cols = None,re_index = None, re_order_rows = None, save_as=None,c='blue'):
+    
+    ARI = adjusted_rand_score(labels_true = test_labels, 
+                              labels_pred = test_predlabels)
+    accuracy = np.sum(test_labels==test_predlabels)/len(test_labels)*100
+    
+           
+    mappingconfmat, mappingxticks, mappingplot = plotConfusionMatrixNew(
+    ytrue = test_labels,
+    ypred = test_predlabels,
+    test_dict=test_dict,
+    train_dict=train_dict,
+    type = 'mapping',
+    save_as = save_as,
+    title = 'ARI = {:.3f}, Accuracy = {:.1f}%'.format(ARI,accuracy),
+    xaxislabel =xaxislabel,
+    yaxislabel = yaxislabel,
+        re_order=re_order,
+    re_order_cols = re_order_cols,
+        re_index = re_index,
+    re_order_rows = re_order_rows,
+    c=c,
+    )
