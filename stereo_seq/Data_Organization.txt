@@ -12,9 +12,14 @@ data/
     atlas/ #You must put this in yourself
         Xie_SC.h5ad #Contains data from Xie et al. 2021 Superior Colliculus scRNA-seq (with author providing us their cluster labels)
 
-    aggregated/ # Stores intermediate data processing; Can be empty to start (notebook commands will fill it)
-        NR.h5ad
-        NR_filt.h5ad
-        NR_Inhibitory.h5ad...
+    SC/ # Stores processed data for various brain regions (e.g. SC in this case), timepoint, and conditions; Can be empty to start (notebook commands will fill it)
+        P42/
+		NR/
+			Excitatory_Neuron.h5ad
+			...
+		DR/
+			...
+		NRDR/
+			...
     
 
