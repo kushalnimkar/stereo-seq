@@ -5,6 +5,10 @@ import xgboost as xgb
 import pickle as pickle
 import time
 import stereo_seq.utils.plotting as pl
+import stereo_seq.utils.classifier as cl
+import stereo_seq.utils.preprocessing as pre
+
+import importlib
 
 def train_model(adata,obs_id, train_dict, model_dir,model_name, cutoff, common_top_genes=None, eta=0.2,max_cells_per_ident=2000,train_frac=0.7,min_cells_per_ident=100,run_validation=True,run_full=False,unassigned_key="Unassigned",colsample_bytree=1,nround=200,max_depth=4):
     if common_top_genes is None:
@@ -41,7 +45,8 @@ def train_model(adata,obs_id, train_dict, model_dir,model_name, cutoff, common_t
 
 
 def gen_dict(adata,col,prefix,unassigned_indicator):
-    classes = np.unique(adata.obs[col])
+    classes = adata.obs[col].unique().categories
+
     if all([i.isnumeric() for i in classes]):
         classes = sorted(classes.astype(int))
 
@@ -55,6 +60,7 @@ def gen_dict(adata,col,prefix,unassigned_indicator):
         t_dict[unassigned_indicator]=n_classes
 
     return t_dict
+    
     
     
 
@@ -174,7 +180,7 @@ def trainclassifier(train_anndata, common_top_genes, obs_id, train_dict, eta,
     return validation_label_train_70, validation_pred_train_70, bst_model_train_70, bst_model_full_train
 
 """Vignette"""
-def run_training_and_validation(adata,obs_id, model_dir,model_name,output_dir,output_f, train_dict_name, run_validation=True,run_full=False,xlabel='Predicted',ylabel='True',
+def run_training_and_validation(adata,obs_id, model_dir,model_name,figure_dir,output_f, train_dict_name, run_validation=True,run_full=False,xlabel='Predicted',ylabel='True',
                 cutoff=0.8,eta=0.2,max_cells_per_ident=2000,train_frac=0.7,min_cells_per_ident=100, colsample_bytree=1,nround=200, max_depth=4, unassigned_indicator='Unassigned'):
     
     train_dict = gen_dict(adata,obs_id,prefix='',unassigned_indicator=unassigned_indicator)
@@ -200,17 +206,19 @@ def run_training_and_validation(adata,obs_id, model_dir,model_name,output_dir,ou
         nround=nround,
         max_depth=max_depth
     )
-    test_dict = gen_dict(adata,obs_id,prefix=None,unassigned_indicator=None)
-    print(train_dict,test_dict)
+    #test_dict = gen_dict(adata,obs_id,prefix=None,unassigned_indicator=None)
+    #print(train_dict,test_dict)
+    test_dict = {k:v for k,v in train_dict.items() if k != unassigned_indicator}
+    importlib.reload(pl)
     pl.plot_mapping_new(test_labels=y.astype(int), #y-axis
                             test_predlabels=y_pred,#x-AXIS
                             test_dict=test_dict,  # y-axis
                             train_dict=train_dict, # x-axis
-                            re_order=False,
-                            re_order_cols=True,
-                            re_index=True,
+                            re_order=True,
+                            re_order_cols=None,
+                            re_index=False,
                             xaxislabel=xlabel, yaxislabel=ylabel,
-                            save_as=os.path.join(output_dir,output_f)
+                            save_as=os.path.join(figure_dir,output_f)
     )
     return valid_model,model,train_dict,test_dict
 
@@ -221,7 +229,7 @@ def threshold(y_probs,unassigned_indicator,cutoff):
     return y_pred
 
 
-def apply_model(adata,model_f,train_dict,cutoff, output_dir,output_f, unassigned_indicator='Unassigned', prefix='MC', test_key='leiden',train_key_added='retina_class',prefix_key=None,xlabel='Predicted',ylabel='Clustering'): #Test key is usually clustering
+def apply_model(adata,model_f,train_dict,cutoff, figure_dir,output_f, unassigned_indicator='Unassigned', prefix='MC', test_key='leiden',key_added='retina_class',prefix_key=None,xlabel='Predicted',ylabel='Clustering'): #Test key is usually clustering
     if isinstance(train_dict,str):
         with open(train_dict,'rb') as f:
             train_dict = pickle.load(f)
@@ -246,18 +254,17 @@ def apply_model(adata,model_f,train_dict,cutoff, output_dir,output_f, unassigned
     else:
         test_labels = adata.obs[test_key].map(test_dict)
 
-    adata.obs[train_key_added] = pd.Series(y_pred).map({v:k for k,v in train_dict.items()}).values
+    adata.obs[key_added] = pd.Series(y_pred).map({v:k for k,v in train_dict.items()}).values
     print(test_dict,train_dict)
-
     pl.plot_mapping_new(test_labels=test_labels, #y-axis
                             test_predlabels=y_pred,#x-AXIS
                             test_dict=test_dict,  # y-axis
                             train_dict=train_dict, # x-axis
-                            re_order=False,
+                            re_order=True,
                             re_order_cols=None,
-                            re_index=True,
+                            re_index=False,
                             xaxislabel=xlabel, yaxislabel=ylabel,
-                            save_as=os.path.join(output_dir,output_f)
+                            save_as=os.path.join(figure_dir,output_f)
                 )
     return test_dict
 
@@ -274,6 +281,67 @@ def threshold(y_probs,unassigned_indicator,cutoff):
     max_indices = np.argmax(y_probs,axis=1)
     y_pred = np.where(maxes < cutoff, unassigned_indicator, max_indices)
     return y_pred
+
+
+
+def train_and_test(adata_train,adata_test,train_col,train_subset, model_dir,model_name,figure_dir,train_dict_name,test_col=None,key_added=None,validation_output_f="validation.png",test_output_f="test_compare.png",genes=None,cutoff=0.5,run_full=False,preprocess_train=False,preprocess_test=False,train_model=True,evaluate_test=True):
+    for d in [model_dir,figure_dir]:
+        if not os.path.exists(d):
+            os.mkdir(d)
+
+    if genes is None:
+        print("Note: Ensuring two datasets have same gene set. Make sure to rename any that have different names beforehand...")
+        genes = sorted(list(set(adata_train.var.index).intersection(set(adata_test.var.index))))
+            
+    adata_train._inplace_subset_var(genes)
+    adata_test._inplace_subset_var(genes)
+
+    
+    if train_subset is not None:
+        adata_train._inplace_subset_obs(adata_train.obs[adata_train.obs[train_col].isin(train_subset)].index)
+    
+
+    if preprocess_train:
+        print("Preprocessing training")
+        pre.preprocess(adata=adata_train,min_genes=None,batch=False,max_counts=None,inplace=True,find_hvg=False,do_pca=False)
+    if preprocess_test:
+        print("Preprocessing test")
+        pre.preprocess(adata=adata_test,min_genes=None,batch=False,max_counts=None,inplace=True,find_hvg=False,do_pca=False)
+    
+    adata_train.obs[train_col] = pd.Categorical(adata_train.obs[train_col])
+    info={}
+    if train_model:
+        valid_model,model,train_dict,test_dict = cl.run_training_and_validation(
+            adata=adata_train,
+            obs_id=train_col,
+            model_dir=model_dir, model_name=model_name,figure_dir=figure_dir,output_f =f"{cutoff}_validation.png",train_dict_name=train_dict_name,
+            colsample_bytree=1,nround=200,max_cells_per_ident=1000,min_cells_per_ident=200,max_depth=4,
+            run_full=run_full
+        )
+        info['valid_model'] = valid_model
+        info['model'] = model
+        info['train_dict'] = train_dict
+        info['test_dict'] = test_dict
+    
+    if evaluate_test:
+        if run_full:
+            xgb_model_f=os.path.join(model_dir, f"{model_name}")
+        else:
+            xgb_model_f=os.path.join(model_dir, f"valid_{model_name}")
+        with open(os.path.join(model_dir,train_dict_name),'rb') as f:
+            train_dict= pickle.load(f)
+            info['train_dict']=train_dict
+        cl.apply_model(adata_test,xgb_model_f,train_dict,cutoff=cutoff, figure_dir=figure_dir,output_f=test_output_f, unassigned_indicator='Unassigned', prefix=None, test_key=test_col,key_added=key_added,prefix_key=None,xlabel='Predicted',ylabel='Previous Clustering') #Test key is usually clustering
+    
+    return info
+
+
+    
+
+
+
+    
+
 
 
 

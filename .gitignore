@@ -6,4 +6,5 @@
 ######################
 data/
 figures/
+models/SC/
 __pycache__/

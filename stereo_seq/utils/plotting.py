@@ -2,10 +2,32 @@ import numpy as np
 from matplotlib import gridspec
 import matplotlib.pyplot as plt
 import pandas as pd
+import scanpy as sc
 
 from sklearn.metrics.cluster import adjusted_rand_score
 from collections import OrderedDict
 
+PLT_CONTEXT={"figure.dpi":300,"font.size":12,'font.sans-serif':'Arial'}
+PLT_SMALLER_CONTEXT={"figure.dpi":300,"font.size":9,'font.sans-serif':'Arial'}
+
+
+def crosstab_confusion(adata,x_col,y_col,xlabel='',ylabel='',output_f=""):
+    x_cats = adata.obs[x_col].cat.categories
+    x_mapping = dict(zip(x_cats, range(len(x_cats))))
+
+    y_cats= adata.obs[y_col].cat.categories
+    y_mapping = dict(zip(y_cats, range(len(y_cats))))
+    plot_mapping_new(
+        test_labels=adata.obs[y_col].map(y_mapping).values.astype(int), #y-axis
+        test_predlabels=adata.obs[x_col].map(x_mapping).values.astype(int),#x-AXIS
+        test_dict=y_mapping,  # y-axis
+        train_dict=x_mapping, # x-axis
+        re_order=True,
+        re_order_cols=None,
+        re_index=False,
+        xaxislabel=xlabel, yaxislabel=ylabel,
+        save_as=output_f
+)
 
 def plotConfusionMatrixNew(
     ytrue,
@@ -47,41 +69,39 @@ def plotConfusionMatrixNew(
 
     # Reorder rows to try and make diagonal
     if re_index:
-        most_likely = np.argmax(confusion_matrix, axis=0)
-        row_order = list(dict.fromkeys(most_likely)) # Note: If one type is most likely for multiple rows, this will get rid of the duplicates
+        raise NotImplementedError("under construction")
         inv_dict = {v:k for k,v in test_dict.items()}
-        unclear_assignment = set(test_dict.keys()) - set(most_likely)
+        most_likely = np.argmax(confusion_matrix, axis=0)
+        row_order = [inv_dict[i] for i in list(set(most_likely))]
+        print(row_order)
+        #row_order = list(dict.fromkeys(most_likely)) # Note: If one type is most likely for multiple rows, this will get rid of the duplicates
+        unclear_assignment = set(test_dict.keys()) - set(row_order)
         row_order.extend(unclear_assignment)
-        print(inv_dict,row_order,unclear_assignment)
-        print(conf_df)
         #row_order = [inv_dict[i] for i in row_order]
+        print(row_order)
         conf_df = conf_df.reindex(row_order)
-    diagcm = conf_df.to_numpy()
+        print("Reindexing", row_order)
 
     if re_order and re_order_cols is None:
-        col_assign = dict(zip(train_dict.values(),[0]*len(train_dict)))
-        col_assign[train_dict['Unassigned']] = 1
-        confusion_matrix= conf_df.values
-        cutoff=0.05
+        most_likely_col_indices = np.argmax(conf_df.values, axis=1)
+        most_likely_col_indices = list(dict.fromkeys(most_likely_col_indices))
         inv_dict = {v:k for k,v in train_dict.items()}
-        re_order_cols=[]
-        for i,row in enumerate(confusion_matrix):
-            possibly_shift = np.where(row>cutoff)[0]
-            for j in possibly_shift:
-                if confusion_matrix[i][j] > col_assign[j]:
-                    col_assign[j] = confusion_matrix[i][j]
-                    re_order_cols.append(inv_dict[j])
-        re_order_cols = list(reversed(re_order_cols))
-        re_order_cols = list(OrderedDict((x, True) for x in re_order_cols).keys())
-        re_order_cols = list(reversed(re_order_cols))
+        col_order = [inv_dict[i] for i in most_likely_col_indices]
+        #row_order = list(dict.fromkeys(most_likely)) # Note: If one type is most likely for multiple rows, this will get rid of the duplicates
+        unclear_assignment = set(train_dict.keys()) - set(col_order)
+        col_order.extend(unclear_assignment)
+        try:
+            col_order.remove('Unassigned')
+            col_order.append('Unassigned')
+        except:
+            pass
+        conf_df = conf_df[col_order]
+        print("Reiordering columns to try and make diagonal")
     elif re_order:        
         conf_df=conf_df[re_order_cols]
-
-        
     
-    conf_df.index = conf_df.index.map(test_dict)
-
-    xticksactual = list(conf_df.columns.map(train_dict))
+    diagcm = conf_df.to_numpy()
+    xticksactual = conf_df.columns
 
     dot_max = np.max(diagcm.flatten())
     dot_min = 0
@@ -128,9 +148,12 @@ def plotConfusionMatrixNew(
     elif type == 'mapping':
         # dot_ax.set_yticklabels(list(test_dict.keys()))
         dot_ax.set_yticklabels(list(conf_df.index))
+    
+    #xticksactual = conf_df.columns.map({v:k for k,v in train_dict.items()})
+    dot_ax.set_xticklabels(xticksactual,rotation=90)
     x_ticks = range(diagcm.shape[1])
     dot_ax.set_xticks(x_ticks)
-    dot_ax.set_xticklabels(xticksactual, rotation=90)
+    #dot_ax.set_xticklabels(xticksactual, rotation=90)
     dot_ax.tick_params(axis='both', labelsize='small')
     dot_ax.grid(True, linewidth = 0.2)
     dot_ax.set_axisbelow(True)
@@ -186,7 +209,7 @@ def plotConfusionMatrixNew(
     if save_as is not None:
         fig.savefig(save_as, bbox_inches = 'tight')
     plt.show()
-    return diagcm, xticksactual, axs
+    return diagcm, None,axs
 
 def plot_mapping_new(test_labels, test_predlabels, test_dict, train_dict, xaxislabel, yaxislabel,re_order=None,re_order_cols = None,re_index = None, re_order_rows = None, save_as=None,c='blue'):
     
@@ -211,3 +234,24 @@ def plot_mapping_new(test_labels, test_predlabels, test_dict, train_dict, xaxisl
     re_order_rows = re_order_rows,
     c=c,
     )
+
+def construct_dotplot(adata,marker_genes,cluster_key,exclude=None,include=None):
+    for crit in [include,exclude]:
+        if crit is not None:
+            assert all([x in adata.obs[cluster_key].cat.categories for x in crit])
+    
+    
+    if exclude is not None:
+        cats = [c for c in adata.obs[cluster_key].cat.categories if c not in exclude]
+    elif include is not None:
+        cats=include
+    else:
+        cats = adata.obs[cluster_key].cat.categories
+
+    var_group_labels = [marker_genes[c] for c in cats]
+    var_names = sum(var_group_labels,[])
+    #print(var_names)
+    var_names = list(dict.fromkeys(var_names))
+    print(var_names)
+    adata=adata[adata.obs[cluster_key].isin(cats)]
+    sc.pl.dotplot(adata,groupby=cluster_key,var_names=sum(var_group_labels,[]))
