@@ -50,7 +50,7 @@ MARKER_GENES={
         'pct_in':0.3
     },
     'Doublet':{
-        'marker_genes':[]
+        'marker_genes':[],
     }
 }
 

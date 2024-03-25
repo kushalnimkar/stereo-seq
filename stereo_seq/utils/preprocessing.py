@@ -160,26 +160,25 @@ def annotate_adata(adata,groups,other_group='?',cluster_col='leiden',class_col='
     for group in groups:
         g_lst.append(group)
         info = groups[group]
-        assert len(info['marker_genes'])== len(info['z-scores'])
-        var_names.extend(info['marker_genes'])
-        cutoffs = np.array(adata[:,info['marker_genes']].X)> np.array(info['z-scores'])
+        if 'z-scores' in info:
+            assert len(info['marker_genes']) == len(info['z-scores'])
+            var_names.extend(info['marker_genes'])
+            cutoffs = np.array(adata[:,info['marker_genes']].X) > np.array(info['z-scores'])
 
-        adata.obs[group]=np.any(cutoffs,axis=1)
-        agg = adata.obs.groupby(cluster_col,observed=False)[group].mean().reset_index(name=group)
-        agg.set_index(cluster_col,inplace=True)
-        if plot:
-            plt.hist(agg[group])
-            plt.ylabel('Number of clusters')
-            plt.xlabel('Prop of cells above cutoff zscore for at least 1 {} marker gene'.format(group))
-            plt.show()
+            adata.obs[group]=np.any(cutoffs,axis=1)
+            agg = adata.obs.groupby(cluster_col,observed=False)[group].mean().reset_index(name=group)
+            agg.set_index(cluster_col,inplace=True)
+            if plot:
+                plt.hist(agg[group])
+                plt.ylabel('Number of clusters')
+                plt.xlabel('Prop of cells above cutoff zscore for at least 1 {} marker gene'.format(group))
+                plt.show()
 
-        potential_clusters = agg[agg[group] >info['pct_in']].index.values
-        adata.obs[group] = pd.Categorical(adata.obs[cluster_col].isin(potential_clusters),categories=[False,True])
+            potential_clusters = agg[agg[group] >info['pct_in']].index.values
+            adata.obs[group] = pd.Categorical(adata.obs[cluster_col].isin(potential_clusters),categories=[False,True])
 
-        if plot:
-            sc.pl.umap(adata,color=[cluster_col]+info['marker_genes'] + [group],vmin=0,vmax=2)
-
-
+            if plot:
+                sc.pl.umap(adata,color=[cluster_col]+info['marker_genes'] + [group],vmin=0,vmax=2)
 
         df_l.append(agg)
     if override is not None:
