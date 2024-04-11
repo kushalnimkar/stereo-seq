@@ -8,6 +8,7 @@ UNCERTAIN_MAPPING={
                     '3':'Doublet','8':'Doublet','11':'Doublet','12':'Doublet',
                     '13':'Meninges',
                     '14':'Pericyte',
+                    '29':'Endothelial',
                 },
                 # 'Non-neuronal_override':{
                 #     '0':'Oligodendrocyte','11':'OPC','22':'Oligodendrocyte','26':'Doublet','28':'Oligodendrocyte','29':'Pericyte',

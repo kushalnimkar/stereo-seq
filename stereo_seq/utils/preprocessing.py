@@ -185,7 +185,6 @@ def annotate_adata(adata,groups,other_group='?',cluster_col='leiden',class_col='
         for clust in override:
             ct = override[clust]
             if ct not in g_lst:
-                print(g_lst)
                 g_lst.append(ct)
                 adata.obs[ct] = False
 
@@ -193,13 +192,12 @@ def annotate_adata(adata,groups,other_group='?',cluster_col='leiden',class_col='
             adata.obs.loc[adata.obs[cluster_col]==clust,other_groups]=False
             adata.obs.loc[adata.obs[cluster_col]==clust, ct] = True
             adata.obs[ct] = pd.Categorical(adata.obs[ct],categories=[False,True])
-            print(ct)
 
 
     #return adata.obs[['leiden'] + g_lst]
     bool_t_ident = adata.obs[g_lst].values
     if np.any(np.sum(bool_t_ident,axis=1) >= 2):
-        print("One cluster is assigned to two classes! Fix this")
+        print("One cluster is assigned to two classes! Fix this. (error cells returned to df)")
         return adata.obs.iloc[np.nonzero(bool_t_ident.sum(axis=1)>=2)]
     #return adata.obs[['leiden'] + g_lst]
 

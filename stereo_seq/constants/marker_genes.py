@@ -49,8 +49,10 @@ MARKER_GENES={
         'z-scores':[2,2],
         'pct_in':0.3
     },
-    'Doublet':{
-        'marker_genes':[],
+    'Endothelial':{
+        'marker_genes':['Slco1a4', 'Flt1'],
+        'z-scores':[2,2],
+        'pct_in':0.3
     }
 }
 

@@ -37,25 +37,29 @@ def gen_candidate_markers(adata,groupby,cats,n_genes=10,diff=True):
 
     return type_marker_map
 
+#class_subtypes = sue.create_subtypes(adata,groupby='subclass',subgroups=sco.CLASS_ORDER,key_added='subtypes',output_f="")
 def create_subtypes(adata,groupby,subgroups,key='leiden',key_added='class_subtypes',output_f=""):
     class_subgroups = adata.obs.groupby(groupby,observed=False)[key].unique()
+    print("class_subgroups from leiden", class_subgroups)
     class_subtypes = []
     all_clusters=[]
     if subgroups is None:
         subgroups = class_subgroups.index.values
-
+    #checks if class order is in leiden and adds it to class_subtypes
     for ct in subgroups:
         if ct not in class_subgroups:
             print(f"Warning, {ct} is not present as an actually annotated class; Skipping")
             continue
+        #There may be multiple leiden subgroups that correspond to the same class. 
         leidens = sorted(class_subgroups[ct],key=int)
         all_clusters.extend(leidens)
+        #Label them with numbers if there are multiple
         if len(leidens) == 1:
             post_added = [f"{ct}" for i in range(1,1+len(leidens))]
         else:
             post_added = [f"{ct}_{i}" for i in range(1,1+len(leidens))]
         class_subtypes.extend(post_added)
-
+    #Missing clusters are clusters in leiden but not in class order
     missing_clusters = set(adata.obs[key].unique()) - set(all_clusters)
     if len(missing_clusters) != 0:
         missing_classes = set(adata.obs[groupby].unique()) - set(subgroups)

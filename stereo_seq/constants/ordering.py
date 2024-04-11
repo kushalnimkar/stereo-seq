@@ -41,7 +41,7 @@ DR_ORDERINGS ={
     }
 }
 
-CLASS_ORDER = ['Excitatory Neuron', 'Inhibitory Neuron', 'Astrocyte','Microglia','OPC','Oligodendrocyte','Pericyte','Meninges','Epithelial','T-cell','Doublet']
+CLASS_ORDER = ['Excitatory Neuron', 'Inhibitory Neuron', 'Astrocyte','Microglia','OPC','Oligodendrocyte','Pericyte','Meninges','Epithelial','T-cell', 'Endothelial', 'Doublet', '?']
 
 def order_ctypes(ctypes,separator="_"):
     secondary_keys = {x:int(x.split(separator)[1]) if separator in x else -1  for x in ctypes}
