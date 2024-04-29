@@ -7,6 +7,7 @@ import time
 import stereo_seq.utils.plotting as pl
 import stereo_seq.utils.classifier as cl
 import stereo_seq.utils.preprocessing as pre
+import stereo_seq.models.model_info as smi
 
 import importlib
 
@@ -335,7 +336,35 @@ def train_and_test(adata_train,adata_test,train_col,train_subset, model_dir,mode
     
     return info
 
+def run_classification_pipeline(region,timepoint,model_name,test_data_dir,test_col,key_added,preprocess_train=True,preprocess_test=False,train_model=False,run_full=False,evaluate_test=True,resave=True):
+    info = smi.get_model_info(region,timepoint,model_name)
+    dataset_info = info['dataset']
+    model_info = info['model']
+    test_group=smi.MODEL_GROUP_MAP[model_name]#Consider replacing test_group and test_data_dir with test_f directly
 
+
+    adata_train = dataset_info['loader'](dataset_info['path'])
+    test_f=os.path.join(os.path.join(test_data_dir,f"{test_group}.h5ad"))
+    adata_test = sc.read_h5ad(test_f)#Already preprocessed
+    suc.train_and_test(
+        adata_train,
+        adata_test,
+        **model_info,
+        test_output_f="test_set.png",
+        test_col=test_col,
+        key_added=key_added,
+        genes=None,
+        cutoff=0.5,
+        preprocess_train=preprocess_train,
+        preprocess_test=preprocess_test,
+        train_model=train_model,
+        run_full=run_full,
+        evaluate_test=evaluate_test,
+    )
+
+    if resave:
+        adata_test.write_h5ad(test_f)
+    return adata_test
     
 
 

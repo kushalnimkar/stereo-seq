@@ -6,6 +6,7 @@ import scrublet as scr
 import anndata as ad
 
 import stereo_seq.utils.exploration as sue
+import stereo_seq.constants.marker_genes as scm
 
 import os
 import re
@@ -33,7 +34,7 @@ def pipeline(
     if make_qc:
         make_QC_plots(adata,figure_dir,pre=pre)
     if detect_doublets:
-        run_scrublet(adata,rep_col=batch_key,cluster_key=key_added,recalc=True, score_cutoff=None,override_info=override_info)
+        run_scrublet(adata,rep_col=batch_key,cluster_key=key_added,recalc=True, score_cutoff=None,override_info=override_info, check_cluster_number=False)
 
 
 
@@ -91,22 +92,29 @@ def preprocess(adata,min_genes=400,batch=False,batch_key='sample',mit_cutoff=0.2
     if not inplace:
         return adata
 
-def run_scrublet(adata,rep_col='sample',cluster_key='leiden',recalc=True, score_cutoff=None,override_info=None):
+def run_scrublet(adata,rep_col='sample',cluster_key='leiden',recalc=True, score_cutoff=None,override_info=None, check_cluster_number=True, cluster_threshold=15):
     #calc doublets
-    if recalc:
+    # Initialize columns if they do not exist
+    if 'doublet_score' not in adata.obs.columns:
         adata.obs['doublet_score'] = pd.NA
+    if 'predicted_doublet' not in adata.obs.columns:
         adata.obs['predicted_doublet'] = pd.NA
-
+    if recalc:
+        #Takes unique samples 'DR1' and 'DR2' and calculates doublet separately
         for rep in adata.obs[rep_col].unique():
-            adata_r = adata[adata.obs[rep_col]==rep]
+            adata_r = adata[adata.obs[rep_col] == rep]
             scrub = scr.Scrublet(adata_r.raw.X)
             doublet_scores, predicted_doublets = scrub.scrub_doublets()
-            adata_r.obs['doublet_score'] = pd.Series(doublet_scores,index=adata_r.obs.index)
-            if score_cutoff is None:
-                adata_r.obs['predicted_doublet'] = pd.Series(predicted_doublets,index=adata_r.obs.index)
+            adata_r.obs['doublet_score'] = doublet_scores
+            if check_cluster_number:
+                adata.obs['cluster_number'] = pd.NA
+                # Calculate cluster number and apply threshold
+                adata_r = calculate_cluster_number(adata_r)
+                adata_r.obs['predicted_doublet'] = pd.Series(predicted_doublets & (adata_r.obs['cluster_number'] > cluster_threshold)) if score_cutoff is None else (doublet_scores > score_cutoff)
             else:
-                adata_r.obs['predicted_doublet'] = pd.Series(doublet_scores > score_cutoff,index=adata_r.obs.index)
-            sc.pl.umap(adata_r,color='doublet_score')
+                adata_r.obs['predicted_doublet'] = pd.Series(predicted_doublets) if score_cutoff is None else (doublet_scores > score_cutoff)
+
+            sc.pl.umap(adata_r, color='doublet_score')
             plt.show()
             adata.obs.update(adata_r.obs,overwrite=False)
     
@@ -129,6 +137,12 @@ def run_scrublet(adata,rep_col='sample',cluster_key='leiden',recalc=True, score_
 
     return mapping
 
+
+def calculate_cluster_number(adata_r):
+    groups = scm.MARKER_GENES
+    identity_matrix = adata_r.obs[groups].values
+    adata_r.obs['cluster_number'] = identity_matrix.sum(axis=1)
+    return adata_r
 
 
 def make_QC_plots(adata,figure_dir,pre):
@@ -205,7 +219,6 @@ def annotate_adata(adata,groups,other_group='?',cluster_col='leiden',class_col='
     
     idx_identities = ( np.sum(bool_t_ident,axis=1) !=0 ) * (bool_t_ident.argmax(axis=1)+1) #makes 0 the none type, 1 excitatory, 2 inhibitory...
     mapping = dict( zip(range(len(g_lst)+1), [other_group] + g_lst ) )
-    print(mapping)
     adata.obs[class_col] = pd.Categorical( pd.Series(idx_identities,index=adata.obs.index).apply(lambda x: mapping[x]) )
     joint_col = f'{class_col}_{cluster_col}'
     adata.obs[joint_col] = adata.obs[class_col].astype(str) + "_" + adata.obs[cluster_col].astype(str)
@@ -219,13 +232,14 @@ def annotate_adata(adata,groups,other_group='?',cluster_col='leiden',class_col='
     
     return pd.concat(df_l,axis=1) 
     
-def split_and_save(adata,col,data_dir,categories=None,detect_doublets=True,override_info=None,output_pre=""):
+def split_and_process(adata,col,data_dir,categories=None,detect_doublets=True,override_info=None,output_pre=""):
     if categories is None:
         categories=adata.obs[col].cat.categories
     for cat in categories:
         adata_c = adata[adata.obs[col]==cat].copy()
         adata_c.X = adata_c.raw.X
-        del adata_c.uns,adata_c.obsm,adata_c.obsp,adata_c.varm
+        #deleted unstructed data, observation matrices and observation pairs to make space.
+        del adata_c.uns,adata_c.obsm,adata_c.obsp,adata_c.varm 
         pipeline(
             adata_c,batch=False,key_added='subleiden',output_f= os.path.join(data_dir,"{}{}.h5ad".format(output_pre,cat)),
             make_qc=False,detect_doublets=detect_doublets,override_info=override_info,inplace=True
@@ -240,7 +254,7 @@ def postprocess_and_merge(adata_merged,adata_lst,subclass_col,subtype_col,rep_co
         assert isinstance(adata_f,str)
         adata = sc.read_h5ad(adata_f)
         if detect_doublets:
-            run_scrublet(adata,rep_col=rep_col,cluster_key=cluster_key,recalc=False, score_cutoff=None,override_info=override_info)
+            run_scrublet(adata,rep_col=rep_col,cluster_key=cluster_key,recalc=False, score_cutoff=None,override_info=override_info, check_cluster_number=True, cluster_threshold=15)
             adata.write_h5ad(adata_f)
         class_subtypes = sue.create_subtypes(adata,groupby=subclass_col,key=cluster_key,subgroups=subclass_order,key_added=subtype_col)
         print(adata.obs[subtype_col].value_counts())

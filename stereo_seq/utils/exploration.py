@@ -37,10 +37,8 @@ def gen_candidate_markers(adata,groupby,cats,n_genes=10,diff=True):
 
     return type_marker_map
 
-#class_subtypes = sue.create_subtypes(adata,groupby='subclass',subgroups=sco.CLASS_ORDER,key_added='subtypes',output_f="")
 def create_subtypes(adata,groupby,subgroups,key='leiden',key_added='class_subtypes',output_f=""):
     class_subgroups = adata.obs.groupby(groupby,observed=False)[key].unique()
-    print("class_subgroups from leiden", class_subgroups)
     class_subtypes = []
     all_clusters=[]
     if subgroups is None:
@@ -80,7 +78,10 @@ def summary_stats(adata,subtype_col,color_col,var_names,figure_dir,rep_col='samp
         if cat not in unique_subtypes:
             print(f"Warning: Category in categories order: {cat} is not in unique col for {subtype_col}")
             categories_order.remove(cat)
-
+    print("Categories Order:", categories_order)
+    print("Variable Names:", var_names)
+    print(adata.obs[subtype_col].unique())
+    print(adata.obs[color_col].unique())
     with plt.rc_context(PLT_CONTEXT):
         sc.pl.dotplot(adata,groupby=subtype_col,categories_order=categories_order,var_names=var_names,vmin=0,vmax=2,use_raw=False,show=False)
         plt.savefig(os.path.join(figure_dir,f"{output_pre}class_subgroups_dotplot.png"),bbox_inches='tight')
