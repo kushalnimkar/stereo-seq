@@ -11,10 +11,9 @@ import stereo_seq.constants.marker_genes as scm
 import os
 import re
 
-
 def pipeline(
     adata,batch=True,batch_key='sample',mit_cutoff=0.25,min_genes=100,max_counts=40000,key_added='leiden',
-    output_f="",figure_dir="",make_qc=True,detect_doublets=False,override_info=None,inplace=False
+    output_f="",figure_dir="",make_qc=True,detect_doublets=False,override_info=None,inplace=False, check_cluster_number=False
     ):
     if batch:
         pre="batch_correct"
@@ -34,7 +33,7 @@ def pipeline(
     if make_qc:
         make_QC_plots(adata,figure_dir,pre=pre)
     if detect_doublets:
-        run_scrublet(adata,rep_col=batch_key,cluster_key=key_added,recalc=True, score_cutoff=None,override_info=override_info, check_cluster_number=False)
+        run_scrublet(adata,rep_col=batch_key,cluster_key=key_added,recalc=True, score_cutoff=None,override_info=override_info, check_cluster_number=check_cluster_number)
 
 
 
@@ -92,27 +91,44 @@ def preprocess(adata,min_genes=400,batch=False,batch_key='sample',mit_cutoff=0.2
     if not inplace:
         return adata
 
-def run_scrublet(adata,rep_col='sample',cluster_key='leiden',recalc=True, score_cutoff=None,override_info=None, check_cluster_number=True, cluster_threshold=15):
+def run_scrublet(adata,rep_col='sample',cluster_key='leiden',recalc=True, score_cutoff=None,override_info=None, check_cluster_number=True, cluster_threshold=3):
     #calc doublets
     # Initialize columns if they do not exist
     if 'doublet_score' not in adata.obs.columns:
         adata.obs['doublet_score'] = pd.NA
     if 'predicted_doublet' not in adata.obs.columns:
         adata.obs['predicted_doublet'] = pd.NA
+    
+    
     if recalc:
+        
+        if 'is_doublet' in adata.obs.columns:
+            # Group by the clustering column and check for doublets
+            clusters_with_doublets = adata.obs.groupby('subleiden')['is_doublet'].any()
+            total_clusters = adata.obs['subleiden'].nunique()
+            # Count how many clusters contain doublets
+            num_clusters_with_doublets = clusters_with_doublets.sum()
+
+            # Print the number of clusters containing doublets
+            print(f"Before recalc: Number of clusters containing doublets: {num_clusters_with_doublets} out of {total_clusters}")
+        else:
+            print("The 'is_doublet' column does not exist in the AnnData object.")
+        
+        
         #Takes unique samples 'DR1' and 'DR2' and calculates doublet separately
+        print(f"recalc: {recalc}, check clusternumber{check_cluster_number}, cluster_threshold{cluster_threshold}, score_cuttoff:{score_cutoff}")
         for rep in adata.obs[rep_col].unique():
             adata_r = adata[adata.obs[rep_col] == rep]
             scrub = scr.Scrublet(adata_r.raw.X)
             doublet_scores, predicted_doublets = scrub.scrub_doublets()
             adata_r.obs['doublet_score'] = doublet_scores
             if check_cluster_number:
-                adata.obs['cluster_number'] = pd.NA
+                adata_r.obs['cluster_number'] = pd.NA
                 # Calculate cluster number and apply threshold
                 adata_r = calculate_cluster_number(adata_r)
-                adata_r.obs['predicted_doublet'] = pd.Series(predicted_doublets & (adata_r.obs['cluster_number'] > cluster_threshold)) if score_cutoff is None else (doublet_scores > score_cutoff)
+                adata_r.obs['predicted_doublet'] = pd.Series(predicted_doublets & (adata_r.obs['cluster_number'] > cluster_threshold), index=adata_r.obs.index) if score_cutoff is None else pd.Series(doublet_scores > score_cutoff, index=adata_r.obs.index)
             else:
-                adata_r.obs['predicted_doublet'] = pd.Series(predicted_doublets) if score_cutoff is None else (doublet_scores > score_cutoff)
+                adata_r.obs['predicted_doublet'] = pd.Series(predicted_doublets, index=adata_r.obs.index) if score_cutoff is None else pd.Series(doublet_scores > score_cutoff, index=adata_r.obs.index)
 
             sc.pl.umap(adata_r, color='doublet_score')
             plt.show()
@@ -120,6 +136,7 @@ def run_scrublet(adata,rep_col='sample',cluster_key='leiden',recalc=True, score_
     
     adata.obs['predicted_doublet']= adata.obs['predicted_doublet'].astype(bool)
     adata.obs['doublet_score']= adata.obs['doublet_score'].astype(float)
+    adata.obs['cluster_number']= adata.obs['predicted_doublet'].astype(int)
     mapping = sue.gen_assignment(adata,col_0=cluster_key,col_1='predicted_doublet',assignment_strat="max")
     [print("Potential doublet cluster", x,mapping[x]) for x in mapping if mapping[x]==True]
     adata.obs['is_doublet'] = adata.obs[cluster_key].map(mapping).map({'False':False,'True':True})
@@ -139,7 +156,7 @@ def run_scrublet(adata,rep_col='sample',cluster_key='leiden',recalc=True, score_
 
 
 def calculate_cluster_number(adata_r):
-    groups = scm.MARKER_GENES
+    groups = list(scm.MARKER_GENES.keys()) 
     identity_matrix = adata_r.obs[groups].values
     adata_r.obs['cluster_number'] = identity_matrix.sum(axis=1)
     return adata_r
@@ -242,7 +259,7 @@ def split_and_process(adata,col,data_dir,categories=None,detect_doublets=True,ov
         del adata_c.uns,adata_c.obsm,adata_c.obsp,adata_c.varm 
         pipeline(
             adata_c,batch=False,key_added='subleiden',output_f= os.path.join(data_dir,"{}{}.h5ad".format(output_pre,cat)),
-            make_qc=False,detect_doublets=detect_doublets,override_info=override_info,inplace=True
+            make_qc=False,detect_doublets=detect_doublets,override_info=override_info,inplace=True, check_cluster_number=True
         )
         sc.pl.umap(adata_c,color='subleiden')
 
@@ -254,7 +271,7 @@ def postprocess_and_merge(adata_merged,adata_lst,subclass_col,subtype_col,rep_co
         assert isinstance(adata_f,str)
         adata = sc.read_h5ad(adata_f)
         if detect_doublets:
-            run_scrublet(adata,rep_col=rep_col,cluster_key=cluster_key,recalc=False, score_cutoff=None,override_info=override_info, check_cluster_number=True, cluster_threshold=15)
+            run_scrublet(adata,rep_col=rep_col,cluster_key=cluster_key,recalc=False, score_cutoff=None,override_info=override_info, check_cluster_number=False, cluster_threshold=15)
             adata.write_h5ad(adata_f)
         class_subtypes = sue.create_subtypes(adata,groupby=subclass_col,key=cluster_key,subgroups=subclass_order,key_added=subtype_col)
         print(adata.obs[subtype_col].value_counts())
